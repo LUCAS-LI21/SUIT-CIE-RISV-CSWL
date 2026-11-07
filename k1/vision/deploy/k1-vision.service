@@ -1,0 +1,40 @@
+[Unit]
+Description=K1 视觉感知服务（YOLOv8n int8 + SpaceMIT EP，HTTP 11436）
+After=network-online.target sound.target
+Wants=network-online.target
+# 防刷屏：摄像头被拔掉时每次推理都会抛异常，若外部条件持续不满足，
+# 无限重启会把 journal 写满。60 秒内超过 6 次就停手，等人介入。
+StartLimitIntervalSec=60
+StartLimitBurst=6
+
+[Service]
+Type=simple
+WorkingDirectory=/root/k1-ai
+Environment=PYTHONUNBUFFERED=1
+
+# CSI pipeline 依赖 spacemit 的 camclk / media 子系统。开机瞬间 /dev/media0
+# 可能还没枚举完，GStreamer 会直接报 pipeline 打不开。程序里对 CSI 失败是
+# 每秒重试（_csi_cap 为空就重新 open），所以这里只需给一点缓冲，不必卡死。
+ExecStartPre=/bin/sh -c 'i=0; while [ $i -lt 10 ] && [ ! -e /dev/media0 ]; do sleep 1; i=$((i+1)); done'
+
+# 模型必须用 int8 量化版：SpaceMIT EP 只对 q.onnx 走加速，fp32 会回落到 CPU
+# 且申请不到 TCM，单帧从 ~90 ms 劣化到 ~600 ms。默认参数是 ./yolov8n.onnx，
+# 所以必须显式覆盖。WorkingDirectory 已设为 /root/k1-ai，相对路径可解析。
+# --csi-size 必须与 csi3_camera_auto.json 的 out_width/out_height 一致（1920x1080），
+# 不一致时 GStreamer caps 协商失败，表现为"pipeline 打不开"而不是尺寸错误。
+# --fps 5：动作阈值已全部按秒定义，帧率只改采样密度（跨帧率一致性见
+# scripts/behavior_lag_probe.py）。2 Hz 下 0.4 s 的跳跃整段落在两帧之间，
+# 物理上采不到，3568 的形象永远收不到「跳」。5 Hz 时 82 ms×5=410 ms，
+# 占空约 41%，仍有热余量；10 Hz 到 82%，无风扇会降频，不建议。
+ExecStart=/usr/bin/python3 /root/k1-ai/vision_service.py --model ./yolov8n.q.onnx --csi /usr/share/camera_json/csi3_camera_auto.json --csi-size 1920x1080 --port 11436 --host 0.0.0.0 --fps 5.0
+
+# 只对非 0 退出重启：手动 systemctl stop 不该被拉起来。
+Restart=on-failure
+RestartSec=5
+
+# 2 fps 持续小负载，给一点优先级让帧间隔稳定（LLM 网关靠 pause 让路，
+# 不靠降权，所以这里不需要 Nice 太大）
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target

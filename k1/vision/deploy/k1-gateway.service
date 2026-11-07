@@ -1,0 +1,22 @@
+[Unit]
+Description=K1 LLM 网关（三通道仲裁，HTTP 11438 → ollama 11434）
+After=network-online.target ollama.service k1-vision.service
+Wants=network-online.target ollama.service k1-vision.service
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+WorkingDirectory=/root/k1-ai
+Environment=PYTHONUNBUFFERED=1
+
+# 网关本身不加载模型，只是转发 + 仲裁，启动是毫秒级。
+# 它唯一的内部依赖是 vision 的 pause/resume：vision 不在时 _post 会等 3 秒
+# 超时再失败，功能不受影响（只是没法让路，LLM 会变慢）。
+ExecStart=/usr/bin/python3 /root/k1-ai/llm_gateway.py --port 11438 --host 0.0.0.0 --upstream http://127.0.0.1:11434
+
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

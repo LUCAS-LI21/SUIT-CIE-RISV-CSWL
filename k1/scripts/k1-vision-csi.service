@@ -1,0 +1,42 @@
+[Unit]
+# K1 板载 CSI 摄像头 + 本地 int8 推理，不依赖 PC 推流。
+#
+# 为什么不继续用 k1-camingest（PC 推流版）：
+#   那条链路 PC → hdc → 3568 nc → SSH → K1 实测要 175 ms/帧，
+#   而推理链只要 153 ms（预处理 40 + 推理 89 + 后处理 24）。
+#   串行相加 328 ms = 3.0 fps，和现网实测 333 ms 完全吻合。
+#   走板载 CSI 后这 175 ms 直接消失，端到端回到 153 ms = 6.5 fps。
+#
+# 帧率依据（K1 干净负载实测，2026-11-06）：
+#   CSI 取帧      17.85 fps（grab_frame.py，30/30 帧，1920x1080）
+#   纯推理         89.18 ms ± 3.77  -> 11.21 fps
+#   预处理         39.96 ms
+#   后处理         23.85 ms
+#   单帧端到端    153.00 ms ± 3.84  ->  6.54 fps
+# 所以 --fps 只能设 6；设 20 只会让 appsink 丢帧 + 请求积压，不会更快。
+#
+# 注意 vision_service.py 的 --fps 默认值是 2.0（第 1290 行）。
+# 之前所有「CSI 帧率只有 2」的结论都是没改这个默认值造成的，不是摄像头的问题。
+Description=K1 CSI camera + YOLO int8 inference on :11436
+After=network.target camera.service
+Wants=camera.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/k1-ai
+ExecStart=/usr/bin/python3 -u vision_service.py \
+          --model ./yolov8n.q.onnx \
+          --csi /usr/share/camera_json/csi3_camera_auto.json \
+          --fps 6 \
+          --port 11436
+Restart=always
+RestartSec=5
+
+# 视觉优先：语音链路空闲时实测吃掉 134% CPU（petvoice 77.8 + VAD 56.9），
+# 把推理从 89 ms 拖到 362 ms（4 倍）。这里给视觉最高权重，配合下面的
+# CPUQuota 才有意义 —— 单靠 nice 在 cgroup 公平调度下抢不过多线程的语音。
+CPUWeight=800
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target

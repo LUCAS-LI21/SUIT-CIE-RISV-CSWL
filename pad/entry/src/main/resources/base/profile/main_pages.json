@@ -1,0 +1,12 @@
+{
+  "src": [
+    "pages/WelcomePage",
+    "pages/Index",
+    "pages/GuidePage",
+    "pages/LoginPage",
+    "pages/PetTypeSelectionPage",
+    "pages/PetBreedSelectionPage",
+    "pages/PetInfoFillPage",
+    "pages/Pet3DGeneratePage"
+  ]
+}

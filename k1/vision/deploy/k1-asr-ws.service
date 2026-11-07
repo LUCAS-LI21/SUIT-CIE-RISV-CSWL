@@ -1,0 +1,42 @@
+[Unit]
+Description=K1 语音识别 WebSocket 服务（SenseVoice-Small int8，按需识别，:11440）
+After=network-online.target
+Wants=network-online.target
+
+# 模型 229 MB，冷加载慢；异常重启要留间隔，失败 5 次停手，人工修比无限重启有用。
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/root/asr
+Environment=PYTHONUNBUFFERED=1
+
+# 与 vision / petvoice 的取舍：视觉服务 CPUWeight=800，这里压到 500，
+# 保证 11436 的帧率不被识别请求拖死（识别是突发的，视觉是持续的）。
+CPUWeight=500
+# 内存天花板：常驻约 400 MB（229 MB 模型 + 解码中间态），
+# 4 GB 板上还要留出视觉与 ollama 的空间。
+MemoryMax=900M
+
+# --provider=cpu 不能改：SpaceMIT EP 会申请 /dev/tcm，TCM 是独占资源，
+# 与视觉服务（11436）抢会直接崩。
+# --num-threads=2：K1 八核里要给 CSI 取帧、YOLO 推理、ollama 留出余量。
+# --max-batch-size=1：单用户按说话，批处理只会增加延迟。
+# --sense-voice-language=zh：只出中文，避免中英混杂（与前端 ltc=2 的意图一致）。
+ExecStart=/root/asr/sherpa-onnx-v2.0.1-linux-riscv64-spacemit-shared/bin/sherpa-onnx-offline-websocket-server \
+    --port=11440 \
+    --num-threads=2 \
+    --max-batch-size=1 \
+    --tokens=/root/asr/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/tokens.txt \
+    --sense-voice-model=/root/asr/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.int8.onnx \
+    --sense-voice-language=zh \
+    --provider=cpu \
+    --log-file=/tmp/asrws.log
+
+Restart=on-failure
+# 冷加载在负载高时会到 30 秒以上，重启太快会在模型没读完时又被叫停
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

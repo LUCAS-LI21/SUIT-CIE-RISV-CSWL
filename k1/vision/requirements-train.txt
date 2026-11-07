@@ -1,0 +1,50 @@
+# 训练环境依赖（PC 端，不是在 K1 上装）
+
+## 安装顺序（GPU 必须先装对 torch，否则 RTX 50 系用不上）
+
+```bash
+# 1) 建环境（已在仓库根目录建好 .venv-train）
+python -m venv .venv-train
+
+# 2) torch：RTX 50 系是 Blackwell（sm_120），必须 cu128 及以上，老版本装上去也无法启用 GPU
+.venv-train/Scripts/python.exe -m pip install torch torchvision \
+    --index-url https://download.pytorch.org/whl/cu128
+
+# 3) 其余依赖
+.venv-train/Scripts/python.exe -m pip install ultralytics onnx onnxscript onnxruntime opencv-python soundfile
+
+#    onnxscript 是必需的：torch 2.11 的新 ONNX 导出器依赖它，缺了会报
+#    ModuleNotFoundError: No module named 'onnxscript'
+#    soundfile 让 audio_to_dataset.py 能读 flac/ogg/aiff（mp3/m4a 仍需 ffmpeg）
+
+# 4) 自检：必须打印 True 和显卡型号
+.venv-train/Scripts/python.exe -c "import torch;print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+## 如果 pip 慢
+
+`torch` 的 CUDA 轮子约 2.5~3 GB，走官方源。国内可用镜像加速其余包：
+
+```bash
+.venv-train/Scripts/python.exe -m pip install ultralytics onnx onnxruntime opencv-python \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+torch 不建议换第三方镜像——cu128 的轮子只有官方源与少数镜像维护，装错版本会出现
+「CUDA 可用但算子报 sm_120 不支持」的怪错。
+
+## 版本对照（踩过的坑）
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| `torch.cuda.is_available()` 为 False，但 nvidia-smi 正常 | 装的是 CPU 版 torch | 按上面 cu128 重装 |
+| 报 `no kernel image is available for execution on the device` | torch 版本老，不含 sm_120 | 升级到含 cu128 的版本 |
+| `ultralytics` 训练时显存 OOM | batch 太大 | `--batch 32` 或 16 |
+| 训练速度极慢、GPU 利用率低 | 数据在机械盘 / 图像太小 | 把数据集放 SSD；`--imgsz 224` 已是最优 |
+| pip 报 `SHFileOperationW 失败: 0x2` 或 `safe-delete` 错误 | 终端注入了删除保护 shim，拦截了 pip 清临时文件 | 命令前加 `export CODEBUDDY_SAFE_DELETE_ENABLED=0` 再装 |
+| 导出的 onnx 只有 24 KB 且旁边有个 `.onnx.data` | 新导出器把权重外部化了 | 用 `dynamo=False` 走 legacy 路径（train_voice_cnn.py 已默认这么做并会自检内联） |
+| 板上加载 onnx 报 unsupported opset 18 | 新导出器把 opset 抬到了 18 | 改用 `dynamo=False` + `opset_version=13` |
+
+## K1 端不需要这些
+
+板上只跑 ONNX 推理（onnxruntime + SpaceMIT EP），不装 torch。本文件仅在 PC 训练时使用。

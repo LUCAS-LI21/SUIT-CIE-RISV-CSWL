@@ -1,0 +1,14 @@
+[Unit]
+Description=Pet Local Knowledge Base (retrieval only, no model)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/petkb
+ExecStart=/usr/bin/python3 /root/petkb/rag.py --serve
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

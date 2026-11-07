@@ -1,0 +1,43 @@
+[Unit]
+Description=K1 宠物叫声识别服务（HTTP 11439）
+Documentation=file:///root/k1-ai/REPORT-voice.md
+# 麦克风属于 sound.target，先等声卡就绪再起，避免开机瞬间 open 失败
+After=network-online.target sound.target
+Wants=network-online.target
+# LLM 只是「改写建议」的可选环节，没它就退规则文案，所以是 Wants 不是 Requires
+After=ollama.service
+Wants=ollama.service
+# 侧车是增强项，用 Wants 不用 Requires：它起不来本服务照常工作
+After=panns-sidecar.service
+Wants=panns-sidecar.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/k1-ai
+
+# ALSA 共享采集：麦克风默认独占，ASR（11437）与本服务要同时开麦，
+# 必须走 dsnoop0 虚拟设备。缺了 ALSA_CONFIG_PATH 里的 alsa.conf 会报
+# "Unknown slave PCM hw:0,0"——它只加载 /etc/asound.conf 时找不到 hw 定义。
+Environment=ALSA_CONFIG_PATH=/usr/share/alsa/alsa.conf:/etc/asound.conf
+Environment=PYTHONUNBUFFERED=1
+
+# 首次部署若 /etc/asound.conf 还没有 dsnoop 定义，就地补一份（幂等）
+ExecStartPre=/bin/sh -c 'grep -q dsnoop0 /etc/asound.conf 2>/dev/null || cat /root/k1-ai/dsnoop.conf >> /etc/asound.conf'
+
+# 设备写 plug:dsnoop0 而不是 dsnoop0：USB 声卡原生 44100 Hz，dsnoop 不重采样，
+# 直接请求 16 kHz 会被静默降级，而采集走的是 -t raw（无 wav 头），程序察觉不到。
+# 结果就是拿 16k 解释 44.1k 的样本，所有频率偏 2.76 倍。plug: 让 ALSA 做转换。
+# --panns-url 指向 PANNs 侧车（11442）。侧车不存在也不会拦住本服务：
+# 规则分类器是完整的一层，模型只是"确认/细化"，连不上就只丢这一层。
+ExecStart=/usr/bin/python3 /root/k1-ai/petvoice_service.py --device plug:dsnoop0 --port 11439 --host 0.0.0.0 --panns-url http://127.0.0.1:11442
+
+# 只对「非 0 退出」重启：手动 systemctl stop 不该被拉起来。
+# 开机时若声卡尚未就绪，第一次 open 会失败并退出，5 秒后重试即可自愈。
+Restart=on-failure
+RestartSec=5
+
+# 采集是持续小负载，给一点实时优先级减少丢帧；失败不影响功能
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target

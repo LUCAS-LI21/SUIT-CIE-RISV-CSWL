@@ -1,0 +1,26 @@
+[Unit]
+Description=K1 PANNs 轻量叫声模型侧车（MobileNetV2 int8，HTTP 11442）
+Documentation=file:///root/k1-ai/REPORT-voice.md
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/k1-ai
+Environment=PYTHONUNBUFFERED=1
+
+# ⚠ 本单元必须绑 cpu0-3。int8 量化 ONNX 的卷积内核在 cpu4-7（cluster1）上
+# 一执行 run() 就 SIGILL（core dumped，dmesg cause=2），而 session 创建却正常。
+# 核绑定由 pin-cores.sh 写入 /etc/systemd/system/panns-sidecar.service.d/60-pinning.conf，
+# 这里不写 taskset —— 两处都写会互相打架，AllowedCPUs 先收紧之后 taskset 会失败。
+ExecStart=/usr/bin/python3 /root/k1-ai/panns_sidecar.py --port 11442 --host 127.0.0.1
+
+# 侧车是「锦上添花」通道：它挂了，petvoice 的规则分类照常工作，只丢模型确认这一层。
+# 所以用 always 而不是 on-failure，让它自己回来，不拖累主链路。
+Restart=always
+RestartSec=4
+
+# 加载 8.9 MB 模型 + 预热一次，实测约 1 s；给足启动时间但不无限等
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

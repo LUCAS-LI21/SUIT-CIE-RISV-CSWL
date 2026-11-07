@@ -1,0 +1,19 @@
+[Unit]
+# 开机自检 + 运行期自愈。对应比赛「异常处理：中途断电再重新上电 / 运行干预能恢复正常」。
+#
+# 为什么不挂到 multi-user.target：
+# 它是一个最长跑 3 分钟的 oneshot（要等 ASR 载 229 MB 模型、等视觉出第一帧）。
+# 挂进 target 会让开机被这个自检本身拖住——那是「为了可靠反而更慢」。
+# 用 timer 在开机后 40 秒启动，既不阻塞开机，又能在人反应过来之前修好。
+Description=K1 开机自检与自愈（六端口 / 视觉出帧 / 模型常驻）
+After=network-online.target ollama.service k1-vision-csi.service
+Wants=ollama.service k1-vision-csi.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /root/k1-ai/k1_selfcheck.py
+TimeoutStartSec=200
+# 自检自己失败不要反复重启刷日志：下一次 timer 会再来一遍。
+Restart=no
+# 自检要跟视觉/模型抢 CPU，别把它也算进「视觉优先」的配额里
+Nice=10

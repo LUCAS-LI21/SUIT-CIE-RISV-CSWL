@@ -1,0 +1,54 @@
+{
+  // ─────────────────────────────────────────────────────────────────────
+  //  签名配置不在仓库里（开源仓库不放任何证书与口令）。
+  //  本地构建前请在 DevEco Studio 的
+  //      File → Project Structure → Signing Configs
+  //  里勾选 Automatically generate signature（或导入自己的 OpenHarmony.p12），
+  //  它会自动在本文件补上 "signingConfigs" 段与 products[].signingConfig。
+  //
+  //  装到 3568（OpenHarmony 5.0.0.71）时，构建完还要先跑
+  //      python tools/patch_sdktype.py <unsigned.hap> <patched.hap>
+  //  把 module.json 里的 HarmonyOS SDK 标记改成 OpenHarmony，否则
+  //  hdc install 会报 9568282 releaseType not same（这个报错文案具有误导性，
+  //  与证书类型无关）。
+  // ─────────────────────────────────────────────────────────────────────
+  "app": {
+    "products": [
+      {
+        "name": "default",
+        "targetSdkVersion": "12",
+        "compileSdkVersion": "12",
+        "compatibleSdkVersion": "12",
+        "runtimeOS": "OpenHarmony",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}

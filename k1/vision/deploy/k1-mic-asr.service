@@ -1,0 +1,27 @@
+[Unit]
+Description=K1 板载麦克风录音 + 本地识别（HTTP :11441）
+After=network-online.target k1-asr-ws.service
+Wants=k1-asr-ws.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/asr
+Environment=PYTHONUNBUFFERED=1
+
+# dsnoop 允许与 petvoice（11439）共享同一个 capture 设备，
+# 本服务录音时不会把叫声识别挤掉。
+Environment=MIC_DEV=plug:dsnoop0
+Environment=ASR_WS=ws://127.0.0.1:11440
+
+# 与视觉/叫声服务抢核时的优先级：识别是突发的，视觉是持续的。
+CPUWeight=400
+# 只做录音转发与 JSON 解析，常驻内存很小；给 400M 是留 numpy 的余量。
+MemoryMax=400M
+
+ExecStart=/usr/bin/python3 /root/asr/k1_mic_asr.py
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,23 @@
+/node_modules
+/oh_modules
+/local.properties
+/.idea
+**/build
+/.hvigor
+.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.test
+/.appanalyzer
+# 调试截图（hdc 取证产物，不入库）
+*.jpeg
+*.jpg
+
+# JVM 崩溃日志（DevEco/hvigor 异常退出产物，不入库）
+hs_err_pid*.log
+replay_pid*.log
+
+# 本地构建临时文件
+_build.log
+_build_emulator.bat

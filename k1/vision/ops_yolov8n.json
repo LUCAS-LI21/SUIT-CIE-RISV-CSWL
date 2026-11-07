@@ -1,0 +1,186 @@
+{
+  "file": "yolov8n.onnx",
+  "ir_version": 7,
+  "opset": [
+    {
+      "domain": "ai.onnx",
+      "version": 12
+    }
+  ],
+  "producer": "pytorch 2.15.0",
+  "num_nodes": 234,
+  "num_initializers": 141,
+  "inputs": [
+    {
+      "name": "images",
+      "shape": [
+        1,
+        3,
+        640,
+        640
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "output0",
+      "shape": [
+        1,
+        84,
+        8400
+      ]
+    }
+  ],
+  "op_counts": {
+    "Conv": 64,
+    "Sigmoid": 58,
+    "Mul": 58,
+    "Concat": 17,
+    "Split": 8,
+    "Add": 8,
+    "Reshape": 8,
+    "MaxPool": 3,
+    "Resize": 2,
+    "Transpose": 2,
+    "Slice": 2,
+    "Sub": 2,
+    "Softmax": 1,
+    "Div": 1
+  },
+  "constrained_ops_present": {
+    "Slice": 2,
+    "Pad": 0,
+    "Tile": 0,
+    "Resize": 2
+  },
+  "resize_modes": {
+    "nearest": 2
+  },
+  "dynamic_shape_nodes": {},
+  "risky_node_count": 0,
+  "risky_detail": [],
+  "findings": [
+    {
+      "op": "Resize",
+      "name": "/model.10/Resize",
+      "output": "/model.10/Resize_output_0",
+      "constraint": "roi/scales/sizes 必须为常量，且 mode 受限",
+      "inputs": [
+        {
+          "idx": 1,
+          "tensor": "/model.10/Constant_1_output_0",
+          "const": true,
+          "reason": "initializer/Constant"
+        },
+        {
+          "idx": 2,
+          "tensor": "/model.10/Constant_output_0",
+          "const": true,
+          "reason": "initializer/Constant"
+        },
+        {
+          "idx": 3,
+          "tensor": "<absent>",
+          "const": true,
+          "reason": "未提供(可选)"
+        }
+      ],
+      "status": "OK",
+      "resize_mode": "nearest"
+    },
+    {
+      "op": "Resize",
+      "name": "/model.13/Resize",
+      "output": "/model.13/Resize_output_0",
+      "constraint": "roi/scales/sizes 必须为常量，且 mode 受限",
+      "inputs": [
+        {
+          "idx": 1,
+          "tensor": "/model.10/Constant_1_output_0",
+          "const": true,
+          "reason": "initializer/Constant"
+        },
+        {
+          "idx": 2,
+          "tensor": "/model.10/Constant_output_0",
+          "const": true,
+          "reason": "initializer/Constant"
+        },
+        {
+          "idx": 3,
+          "tensor": "<absent>",
+          "const": true,
+          "reason": "未提供(可选)"
+        }
+      ],
+      "status": "OK",
+      "resize_mode": "nearest"
+    },
+    {
+      "op": "Slice",
+      "name": "/model.22/Slice",
+      "output": "/model.22/Slice_output_0",
+      "constraint": "starts/ends/axes/steps 必须为常量",
+      "inputs": [
+        {
+          "idx": 1,
+          "tensor": "/model.22/Constant_7_output_0",
+          "const": true,
+          "reason": "initializer/Constant"
+        },
+        {
+          "idx": 2,
+          "tensor": "/model.22/Mul_output_0",
+          "const": true,
+          "reason": "initializer/Constant"
+        },
+        {
+          "idx": 3,
+          "tensor": "/model.22/Constant_6_output_0",
+          "const": true,
+          "reason": "initializer/Constant"
+        },
+        {
+          "idx": 4,
+          "tensor": "<absent>",
+          "const": true,
+          "reason": "未提供(可选)"
+        }
+      ],
+      "status": "OK"
+    },
+    {
+      "op": "Slice",
+      "name": "/model.22/Slice_1",
+      "output": "/model.22/Slice_1_output_0",
+      "constraint": "starts/ends/axes/steps 必须为常量",
+      "inputs": [
+        {
+          "idx": 1,
+          "tensor": "/model.22/Mul_output_0",
+          "const": true,
+          "reason": "initializer/Constant"
+        },
+        {
+          "idx": 2,
+          "tensor": "/model.22/Mul_1_output_0",
+          "const": true,
+          "reason": "initializer/Constant"
+        },
+        {
+          "idx": 3,
+          "tensor": "/model.22/Constant_6_output_0",
+          "const": true,
+          "reason": "initializer/Constant"
+        },
+        {
+          "idx": 4,
+          "tensor": "<absent>",
+          "const": true,
+          "reason": "未提供(可选)"
+        }
+      ],
+      "status": "OK"
+    }
+  ]
+}

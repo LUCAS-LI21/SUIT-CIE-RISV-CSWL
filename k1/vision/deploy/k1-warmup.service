@@ -1,0 +1,33 @@
+[Unit]
+Description=K1 模型预热与保活（把 qwen3:0.6b 钉进内存，避免首次对话等冷加载）
+Documentation=file:///root/k1-ai/deploy/install_k1_ai.sh
+After=ollama.service k1-gateway.service k1-asr.service
+Wants=ollama.service k1-gateway.service
+
+# 本单元不设 [Install]：由 k1-warmup.timer 触发。
+# 如果写成 WantedBy=multi-user.target，systemd 会把 oneshot 的执行
+# 算作 target 达成的一部分，开机就会被这次预热阻塞十几秒——
+# 那是"为了快反而更慢"。
+
+[Service]
+Type=oneshot
+# 不要加 RemainAfterExit=yes：加了之后单元会停在 active(exited)，
+# 再次 `systemctl start` 是空操作（实测「手动补预热」静默无效），
+# ollama 重启导致模型被换出时就没法用同一条命令补回来。
+
+# 调用独立脚本，而不是把 curl 和 JSON 直接写在 ExecStart 里。三个理由，都对应实测失败：
+#   1) 套 sh -c 时 systemd 先吃掉 \"，sh 再把 JSON 引号当字符串边界剥掉，
+#      发给 ollama 的是非法 JSON，返回 400 —— 预热静默失效，日志只有一行 400。
+#      写进脚本文件后引号属于脚本自身语法，不经过 systemd 两层转义。
+#   2) 一次性的 curl 没有重试能力。实测开机 70 秒那一次被重负载推迟到
+#      +140 秒才执行，若那时 ollama 尚未监听，就永久失败；而前缀 "-"
+#      让失败不留痕迹，比失败本身更难查。脚本改为最多 3 分钟轮询。
+#   3) 脚本会二次确认 `ollama ps` 里真有这个模型，避免「HTTP 200 但模型
+#      已被换出」的边界情况被当成预热成功。
+#
+# 不写前缀 "-"：脚本自己决定成功与否，真失败应当让单元标红、能被
+# `systemctl --failed` 看见，而不是隐去。
+ExecStart=/bin/sh /root/k1-ai/deploy/warmup.sh
+
+# 脚本最长 60 次 ×（单次 120 秒超时 + 3 秒间隔），给足余量。
+TimeoutStartSec=900

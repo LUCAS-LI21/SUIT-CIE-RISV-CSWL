@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>3D Pet Viewer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+#canvas-container { width: 100%; height: 100%; touch-action: none; }
+canvas { display: block; width: 100%; height: 100%; }
+#loading-overlay {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  background: rgba(255,255,255,0.85); z-index: 10;
+}
+#loading-overlay.hidden { display: none; }
+.loading-spinner {
+  width: 50px; height: 50px; border: 4px solid #e0e0e0;
+  border-top: 4px solid #FF9500; border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#loading-text { margin-top: 12px; font-size: 14px; color: #666; font-family: sans-serif; }
+#touch-feedback {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  pointer-events: none; z-index: 5;
+  font-size: 28px; opacity: 0; transition: opacity 0.3s;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+#touch-feedback.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="canvas-container"></div>
+<div id="loading-overlay">
+  <div class="loading-spinner"></div>
+  <div id="loading-text">正在加载3D模型...</div>
+</div>
+<div id="touch-feedback"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./three.module.js",
+    "three/addons/": "./"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ========== 全局变量 ==========
+let scene, camera, renderer, controls, mixer;
+let model = null;
+let raycaster, mouse;
+let clock = new THREE.Clock();
+let currentAnimation = null;
+let animationMap = {};
+let isAnimating = false;
+let animationTimeout = null;
+let currentModelUrl = '';  // 记录当前模型URL（用于格式检测）
+
+// 部位名称 → 互动动作映射
+const PART_ACTION_MAP = {
+  'head': { action: 'pat_head', emoji: '👋', label: '摸头' },
+  'body': { action: 'pat_body', emoji: '🤗', label: '抚摸' },
+  'tail': { action: 'wag_tail', emoji: '🐕', label: '摇尾巴' },
+  'left_paw': { action: 'shake_paw', emoji: '🤝', label: '握手' },
+  'right_paw': { action: 'shake_paw', emoji: '🤝', label: '握手' },
+  'ear_left': { action: 'pat_head', emoji: '👂', label: '摸耳朵' },
+  'ear_right': { action: 'pat_head', emoji: '👂', label: '摸耳朵' },
+  'nose': { action: 'pat_head', emoji: '🐶', label: '摸鼻子' },
+  'belly': { action: 'pat_body', emoji: '😊', label: '揉肚子' },
+};
+
+// ========== 初始化场景 ==========
+function init() {
+  const container = document.getElementById('canvas-container');
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+
+  // 场景
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xf0f5ff);
+
+  // 相机（正面视角）
+  camera = new THREE.PerspectiveCamera(40, w / h, 0.1, 100);
+  camera.position.set(0, 0.8, 3.5);
+
+  // 渲染器
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.2;
+  container.appendChild(renderer.domElement);
+
+  // 控制器（允许旋转查看模型）
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.enablePan = false;
+  controls.minDistance = 2;
+  controls.maxDistance = 8;
+  controls.target.set(0, 0.5, 0);
+  controls.maxPolarAngle = Math.PI * 0.85;
+
+  // 灯光
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(ambientLight);
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  dirLight.position.set(3, 5, 4);
+  dirLight.castShadow = true;
+  dirLight.shadow.mapSize.set(1024, 1024);
+  scene.add(dirLight);
+
+  const fillLight = new THREE.DirectionalLight(0xffe0b2, 0.4);
+  fillLight.position.set(-3, 3, -2);
+  scene.add(fillLight);
+
+  // 地面（半透明圆盘）
+  const groundGeo = new THREE.CircleGeometry(2, 32);
+  const groundMat = new THREE.MeshStandardMaterial({
+    color: 0xe8e8e8, transparent: true, opacity: 0.5
+  });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.01;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  // 射线检测
+  raycaster = new THREE.Raycaster();
+  mouse = new THREE.Vector2();
+
+  // 事件监听
+  renderer.domElement.addEventListener('click', onCanvasClick);
+  renderer.domElement.addEventListener('touchend', onCanvasTouchEnd);
+  window.addEventListener('resize', onResize);
+
+  // 动画循环
+  animate();
+}
+
+// ========== 加载3D模型（支持 GLB/GLTF + FBX） ==========
+function loadModel(modelUrl) {
+  currentModelUrl = modelUrl; // 记录当前URL
+  const loadingOverlay = document.getElementById('loading-overlay');
+  const loadingText = document.getElementById('loading-text');
+
+  loadingText.textContent = '正在加载3D模型...';
+  loadingOverlay.classList.remove('hidden');
+
+  console.log('[ThreeJS] 开始加载模型:', modelUrl);
+
+  // 根据文件扩展名选择加载器
+  const urlLower = modelUrl.toLowerCase();
+  if (urlLower.endsWith('.fbx')) {
+    loadFBXModel(modelUrl, loadingOverlay, loadingText);
+  } else {
+    // 默认使用 GLTFLoader（支持 .glb, .gltf）
+    loadGLBModel(modelUrl, loadingOverlay, loadingText);
+  }
+}
+
+// ========== GLB/GLTF 模型加载 ==========
+function loadGLBModel(modelUrl, loadingOverlay, loadingText) {
+  const loader = new GLTFLoader();
+
+  loader.load(
+    modelUrl,
+    (gltf) => {
+      console.log('[ThreeJS] GLB模型加载成功');
+      processLoadedModel(gltf.scene, gltf.animations, loadingOverlay);
+    },
+    (progress) => {
+      if (progress.total > 0) {
+        const pct = Math.round((progress.loaded / progress.total) * 100);
+        loadingText.textContent = `加载中... ${pct}%`;
+      }
+    },
+    (error) => {
+      console.error('[ThreeJS] GLB模型加载失败:', error);
+      handleLoadError(error, modelUrl, loadingText, loadingOverlay);
+    }
+  );
+}
+
+// ========== FBX 模型加载 ==========
+function loadFBXModel(modelUrl, loadingOverlay, loadingText) {
+  const loader = new FBXLoader();
+
+  loader.load(
+    modelUrl,
+    (fbx) => {
+      console.log('[ThreeJS] FBX模型加载成功');
+      // FBX 对象本身就是 scene（THREE.Group）
+      // FBXLoader 返回的 animations 在 fbx.animations 中
+      processLoadedModel(fbx, fbx.animations || [], loadingOverlay);
+    },
+    (progress) => {
+      if (progress.total > 0) {
+        const pct = Math.round((progress.loaded / progress.total) * 100);
+        loadingText.textContent = `加载中... ${pct}%`;
+      }
+    },
+    (error) => {
+      console.error('[ThreeJS] FBX模型加载失败:', error);
+      handleLoadError(error, modelUrl, loadingText, loadingOverlay);
+    }
+  );
+}
+
+// ========== 统一处理加载后的模型 ==========
+function processLoadedModel(sceneObj, animations, loadingOverlay) {
+  model = sceneObj;
+
+  // 自动缩放和居中模型
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const scale = 1.6 / maxDim;
+  model.scale.setScalar(scale);
+  model.position.sub(center.multiplyScalar(scale));
+  model.position.y += size.y * scale / 2;
+
+  // 启用阴影
+  model.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+
+  scene.add(model);
+
+  // 提取动画（FBX 和 GLB 统一处理）
+  if (animations && animations.length > 0) {
+    console.log('[ThreeJS] 发现动画数量:', animations.length);
+    
+    // 先创建 AnimationMixer（必须在 clipAction 之前）
+    mixer = new THREE.AnimationMixer(model);
+    
+    animations.forEach((clip) => {
+      console.log('[ThreeJS] 动画名称:', clip.name);
+      animationMap[clip.name] = mixer.clipAction(clip);
+    });
+
+    // 播放默认待机动画
+    const idleNames = ['idle', 'Idle', 'stand', 'Stand', 'Take 001', 'Animation'];
+    let playedIdle = false;
+    for (const idleName of idleNames) {
+      if (animationMap[idleName]) {
+        playAnimation(idleName, true);
+        playedIdle = true;
+        break;
+      }
+    }
+    if (!playedIdle && animations.length > 0) {
+      playAnimation(animations[0].name, true);
+    }
+  } else {
+    console.warn('[ThreeJS] 模型没有内置动画');
+  }
+
+  loadingOverlay.classList.add('hidden');
+  
+  // 检测模型格式
+  let format = 'unknown';
+  if (modelUrl) {
+    format = modelUrl.toLowerCase().endsWith('.fbx') ? 'fbx' : 
+             modelUrl.toLowerCase().endsWith('.glb') ? 'glb' : 
+             modelUrl.startsWith('data:') ? 'data-url' : 'unknown';
+  }
+  notifyNative('onModelLoaded', { success: true, format });
+}
+
+// ========== 加载错误处理 ==========
+function handleLoadError(error, modelUrl, loadingText, loadingOverlay) {
+  console.error('[ThreeJS] 尝试加载的URL:', modelUrl);
+  console.error('[ThreeJS] 错误详情:', error);
+
+  // 尝试使用简化版模型（如果有的话）
+  if (!window._fallbackAttempted) {
+    window._fallbackAttempted = true;
+    loadingText.textContent = '正在尝试精简模式...';
+    console.log('[ThreeJS] 尝试加载简化版模型');
+
+    // 创建一个简单的几何体作为 fallback
+    setTimeout(() => createFallbackModel(loadingOverlay), 500);
+    return;
+  }
+
+  loadingText.textContent = '模型加载失败，请刷新重试';
+  notifyNative('onModelLoaded', { success: false, error: error ? error.message : 'Unknown error', url: modelUrl });
+}
+
+// ========== 创建简化的 Fallback 模型（立方体/球体代替）==========
+function createFallbackModel(loadingOverlay) {
+  console.log('[ThreeJS] 创建简化版宠物模型...');
+
+  // 清除旧模型
+  if (model) {
+    scene.remove(model);
+    model = null;
+  }
+
+  // 创建一个可爱的简化狗狗形状
+  const group = new THREE.Group();
+
+  // 身体（椭球）
+  const bodyGeo = new THREE.SphereGeometry(0.5, 32, 32);
+  bodyGeo.scale(1.2, 0.8, 0.8);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xD2691E, roughness: 0.7 });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = 0.5;
+  group.add(body);
+
+  // 头部
+  const headGeo = new THREE.SphereGeometry(0.35, 32, 32);
+  const headMat = new THREE.MeshStandardMaterial({ color: 0xD2691E, roughness: 0.7 });
+  const head = new THREE.Mesh(headGeo, headMat);
+  head.position.set(0, 1.1, 0.3);
+  group.add(head);
+
+  // 耳朵
+  const earGeo = new THREE.SphereGeometry(0.15, 16, 16);
+  earGeo.scale(0.6, 1.2, 0.4);
+  const earMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+
+  const leftEar = new THREE.Mesh(earGeo, earMat);
+  leftEar.position.set(-0.25, 1.35, 0.2);
+  leftEar.rotation.z = 0.3;
+  group.add(leftEar);
+
+  const rightEar = new THREE.Mesh(earGeo, earMat);
+  rightEar.position.set(0.25, 1.35, 0.2);
+  rightEar.rotation.z = -0.3;
+  group.add(rightEar);
+
+  // 鼻子
+  const noseGeo = new THREE.SphereGeometry(0.08, 16, 16);
+  const noseMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
+  const nose = new THREE.Mesh(noseGeo, noseMat);
+  nose.position.set(0, 1.05, 0.6);
+  group.add(nose);
+
+  // 眼睛
+  const eyeGeo = new THREE.SphereGeometry(0.06, 16, 16);
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
+
+  const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+  leftEye.position.set(-0.12, 1.18, 0.6);
+  group.add(leftEye);
+
+  const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+  rightEye.position.set(0.12, 1.18, 0.6);
+  group.add(rightEye);
+
+  // 腿
+  const legGeo = new THREE.CylinderGeometry(0.08, 0.1, 0.4, 16);
+  const legMat = new THREE.MeshStandardMaterial({ color: 0xD2691E });
+
+  const positions = [
+    [-0.3, 0.2, 0.2], [0.3, 0.2, 0.2],
+    [-0.3, 0.2, -0.2], [0.3, 0.2, -0.2]
+  ];
+
+  positions.forEach(pos => {
+    const leg = new THREE.Mesh(legGeo, legMat);
+    leg.position.set(pos[0], pos[1], pos[2]);
+    leg.castShadow = true;
+    group.add(leg);
+  });
+
+  // 尾巴
+  const tailCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0.6, -0.4),
+    new THREE.Vector3(0, 0.8, -0.6),
+    new THREE.Vector3(0.1, 0.9, -0.7)
+  ]);
+  const tailGeo = new THREE.TubeGeometry(tailCurve, 20, 0.06, 8, false);
+  const tail = new THREE.Mesh(tailGeo, bodyMat);
+  group.add(tail);
+
+  // 启用阴影
+  group.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+
+  model = group;
+
+  // 自动缩放和居中
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const scale = 1.6 / maxDim;
+  model.scale.setScalar(scale);
+  model.position.y += 0.2;
+
+  scene.add(model);
+  loadingOverlay.classList.add('hidden');
+
+  console.log('[ThreeJS] 简化版模型已创建');
+  notifyNative('onModelLoaded', { success: true, format: 'fallback-geometry' });
+}
+
+// ========== 播放动画 ==========
+function playAnimation(name, loop = false) {
+  if (!mixer || !animationMap[name]) return;
+
+  // 停止当前动画
+  if (currentAnimation) {
+    currentAnimation.fadeOut(0.3);
+  }
+
+  const action = animationMap[name];
+  action.reset();
+  action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+  action.clampWhenFinished = !loop;
+  action.fadeIn(0.3);
+  action.play();
+  currentAnimation = action;
+
+  if (!loop) {
+    isAnimating = true;
+    if (animationTimeout) clearTimeout(animationTimeout);
+    animationTimeout = setTimeout(() => {
+      isAnimating = false;
+      // 恢复待机动画
+      const idleName = animationMap['idle'] ? 'idle' : animationMap['Idle'] ? 'Idle' : animationMap['stand'] ? 'stand' : null;
+      if (idleName) playAnimation(idleName, true);
+    }, 3000);
+  }
+}
+
+// ========== 程序化动画（无内置动画时） ==========
+function playProceduralAnimation(partName) {
+  if (!model || isAnimating) return;
+  isAnimating = true;
+
+  const partConfig = PART_ACTION_MAP[partName];
+  if (!partConfig) { isAnimating = false; return; }
+
+  // 找到对应部位mesh
+  let targetMesh = null;
+  model.traverse((child) => {
+    if (child.isMesh && child.name.toLowerCase().includes(partName)) {
+      targetMesh = child;
+    }
+  });
+
+  if (!targetMesh) {
+    // 如果找不到精确部位，对整个模型做动画
+    targetMesh = model;
+  }
+
+  const originalPos = targetMesh.position.clone();
+  const originalRot = targetMesh.rotation.clone();
+  const startTime = Date.now();
+  const duration = 1500;
+
+  function animatePart() {
+    const elapsed = Date.now() - startTime;
+    const t = Math.min(elapsed / duration, 1);
+
+    if (partConfig.action === 'pat_head') {
+      // 摸头：轻微上下点头 + 前倾
+      targetMesh.rotation.x = originalRot.x + Math.sin(t * Math.PI * 4) * 0.15;
+      targetMesh.position.y = originalPos.y + Math.sin(t * Math.PI * 2) * 0.05;
+    } else if (partConfig.action === 'pat_body') {
+      // 抚摸：左右轻微摇晃
+      targetMesh.rotation.z = originalRot.z + Math.sin(t * Math.PI * 3) * 0.1;
+    } else if (partConfig.action === 'wag_tail') {
+      // 摇尾巴：快速左右摆动
+      targetMesh.rotation.y = originalRot.y + Math.sin(t * Math.PI * 8) * 0.3;
+    } else if (partConfig.action === 'shake_paw') {
+      // 握手：上下摆动
+      targetMesh.rotation.x = originalRot.x + Math.sin(t * Math.PI * 6) * 0.2;
+      targetMesh.position.y = originalPos.y + Math.sin(t * Math.PI * 4) * 0.08;
+    }
+
+    if (t < 1) {
+      requestAnimationFrame(animatePart);
+    } else {
+      // 恢复原位
+      targetMesh.position.copy(originalPos);
+      targetMesh.rotation.copy(originalRot);
+      isAnimating = false;
+    }
+  }
+  animatePart();
+}
+
+// ========== 点击检测 ==========
+function getIntersectedPart(clientX, clientY) {
+  if (!model) return null;
+
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObject(model, true);
+
+  if (intersects.length > 0) {
+    const hit = intersects[0];
+    const meshName = hit.object.name.toLowerCase();
+
+    // 匹配部位
+    for (const part of Object.keys(PART_ACTION_MAP)) {
+      if (meshName.includes(part)) {
+        return { part, point: hit.point, meshName };
+      }
+    }
+
+    // 根据点击位置Y坐标判断部位
+    const worldY = hit.point.y;
+    const modelBox = new THREE.Box3().setFromObject(model);
+    const modelHeight = modelBox.max.y - modelBox.min.y;
+    const relY = (worldY - modelBox.min.y) / modelHeight;
+
+    if (relY > 0.7) return { part: 'head', point: hit.point, meshName };
+    if (relY > 0.4) return { part: 'body', point: hit.point, meshName };
+    return { part: 'tail', point: hit.point, meshName };
+  }
+  return null;
+}
+
+function onCanvasClick(event) {
+  const result = getIntersectedPart(event.clientX, event.clientY);
+  if (result) handlePartClick(result);
+}
+
+function onCanvasTouchEnd(event) {
+  if (event.changedTouches && event.changedTouches.length > 0) {
+    const touch = event.changedTouches[0];
+    const result = getIntersectedPart(touch.clientX, touch.clientY);
+    if (result) handlePartClick(result);
+  }
+}
+
+function handlePartClick(result) {
+  const { part } = result;
+  const config = PART_ACTION_MAP[part] || { action: 'pat_head', emoji: '👋', label: '互动' };
+
+  // 显示反馈
+  showFeedback(config.emoji + ' ' + config.label);
+
+  // 尝试播放内置动画
+  const animName = config.action;
+  const hasBuiltInAnim = animationMap[animName] || animationMap[animName.replace('_', '')];
+  if (hasBuiltInAnim) {
+    playAnimation(animationMap[animName] ? animName : animName.replace('_', ''), false);
+  } else {
+    // 程序化动画
+    playProceduralAnimation(part);
+  }
+
+  // 通知原生
+  notifyNative('onPetPartTouched', { part, action: config.action, label: config.label });
+}
+
+// ========== UI反馈 ==========
+function showFeedback(text) {
+  const el = document.getElementById('touch-feedback');
+  el.textContent = text;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 1200);
+}
+
+// ========== 外部调用接口（ArkTS → JS） ==========
+window.loadModelFromUrl = function(url) {
+  loadModel(url);
+};
+
+// ========== 从 ArkTS 加载 FBX + base64 纹理 ==========
+window.loadFBXWithTextures = function(jsonStr) {
+  console.log('[ThreeJS] 收到FBX+纹理数据, 长度:', jsonStr.length);
+  
+  const loadingOverlay = document.getElementById('loading-overlay');
+  const loadingText = document.getElementById('loading-text');
+  loadingText.textContent = '正在加载FBX模型...';
+  loadingOverlay.classList.remove('hidden');
+
+  try {
+    const data = JSON.parse(jsonStr);
+    currentModelUrl = 'fbx-with-textures';
+
+    // 先预加载所有纹理
+    const textureLoader = new THREE.TextureLoader();
+    const loadedTextures: Record<string, THREE.Texture> = {};
+    let texturePromises: Promise<void>[] = [];
+
+    for (const [texName, texUrl] of Object.entries(data.textures)) {
+      if (loadedTextures[texName]) continue;
+      const promise = new Promise<void>((resolve, reject) => {
+        textureLoader.load(
+          texUrl as string,
+          (texture) => {
+            texture.flipY = false;
+            loadedTextures[texName] = texture;
+            resolve();
+          },
+          undefined,
+          () => resolve()
+        );
+      });
+      texturePromises.push(promise);
+    }
+
+    Promise.all(texturePromises).then(() => {
+      console.log('[ThreeJS] 纹理预加载完成, 数量:', Object.keys(loadedTextures).length);
+      
+      const fbxLoader = new FBXLoader();
+      fbxLoader.load(
+        data.fbxUrl,
+        (fbx) => {
+          console.log('[ThreeJS] FBX模型加载成功, 开始替换纹理...');
+          
+          window._loadedTextures = loadedTextures;
+          
+          fbx.traverse((child: any) => {
+            if (child.isMesh && child.material) {
+              const materials = Array.isArray(child.material) ? child.material : [child.material];
+              materials.forEach((mat: any) => {
+                if (!mat.map && Object.keys(loadedTextures).length > 0) {
+                  const firstTextureKey = Object.keys(data.textures)[0];
+                  if (firstTextureKey && loadedTextures[firstTextureKey]) {
+                    mat.map = loadedTextures[firstTextureKey];
+                    mat.needsUpdate = true;
+                    console.log('[ThreeJS] 为材质分配默认纹理:', firstTextureKey);
+                  }
+                }
+              });
+            }
+          });
+
+          processLoadedModel(fbx, fbx.animations || [], loadingOverlay);
+        },
+        (progress: any) => {
+          if (progress.total > 0) {
+            const pct = Math.round((progress.loaded / progress.total) * 100);
+            loadingText.textContent = `FBX加载中... ${pct}%`;
+          }
+        },
+        (error: any) => {
+          console.error('[ThreeJS] FBX模型加载失败:', error);
+          handleLoadError(error, data.fbxUrl, loadingText, loadingOverlay);
+        }
+      );
+    });
+
+  } catch (parseError: any) {
+    console.error('[ThreeJS] 解析FBX数据JSON失败:', parseError);
+    handleLoadError(parseError, 'json-parse-error', loadingText, loadingOverlay);
+  }
+};
+
+// ========== 从内嵌数据（loadHtml 方式）加载模型 ==========
+// 直接使用 window._EMBEDDED_FBX_URL 和 window._EMBEDDED_TEXTURES 全局变量，无需序列化
+window.loadEmbeddedModel = function() {
+  if (!window._EMBEDDED_FBX_URL) {
+    console.warn('[ThreeJS] 内嵌FBX数据不存在，等待注入...');
+    // 稍后重试（ArkTS 注入可能有延迟）
+    setTimeout(function() { window.loadEmbeddedModel(); }, 200);
+    return;
+  }
+
+  console.log('[ThreeJS] loadEmbeddedModel 触发');
+  
+  const loadingOverlay = document.getElementById('loading-overlay');
+  const loadingText = document.getElementById('loading-text');
+  loadingText.textContent = '正在加载FBX模型...';
+  loadingOverlay.classList.remove('hidden');
+
+  currentModelUrl = 'fbx-embedded';
+
+  const fbxUrl: string = window._EMBEDDED_FBX_URL as string;
+  const texData: Record<string, string> = window._EMBEDDED_TEXTURES as Record<string, string>;
+
+  // 预加载纹理
+  const textureLoader = new THREE.TextureLoader();
+  const loadedTextures: Record<string, THREE.Texture> = {};
+  let texturePromises: Promise<void>[] = [];
+
+  for (const [texName, texUrl] of Object.entries(texData)) {
+    if (loadedTextures[texName]) continue;
+    const promise = new Promise<void>(function(resolve) {
+      textureLoader.load(
+        texUrl as string,
+        function(texture) { texture.flipY = false; loadedTextures[texName] = texture; resolve(); },
+        undefined,
+        function() { resolve(); }
+      );
+    });
+    texturePromises.push(promise);
+  }
+
+  Promise.all(texturePromises).then(function() {
+    console.log('[ThreeJS] 内嵌纹理预加载完成:', Object.keys(loadedTextures).length);
+
+    const fbxLoader = new FBXLoader();
+    fbxLoader.load(
+      fbxUrl,
+      function(fbx) {
+        console.log('[ThreeJS] FBX模型(内嵌)加载成功');
+        
+        fbx.traverse(function(child: any) {
+          if (child.isMesh && child.material) {
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach(function(mat: any) {
+              if (!mat.map && Object.keys(loadedTextures).length > 0) {
+                var firstKey = Object.keys(texData)[0];
+                if (firstKey && loadedTextures[firstKey]) {
+                  mat.map = loadedTextures[firstKey];
+                  mat.needsUpdate = true;
+                }
+              }
+            });
+          }
+        });
+
+        processLoadedModel(fbx, fbx.animations || [], loadingOverlay);
+      },
+      function(progress: any) {
+        if (progress.total > 0) {
+          var pct = Math.round((progress.loaded / progress.total) * 100);
+          loadingText.textContent = 'FBX加载中... ' + pct + '%';
+        }
+      },
+      function(error: any) {
+        console.error('[ThreeJS] FBX内嵌加载失败:', error);
+        handleLoadError(error, fbxUrl, loadingText, loadingOverlay);
+      }
+    );
+  });
+};
+
+window.triggerAction = function(action) {
+  // 从ArkTS触发的动作命令
+  const actionAnimMap = {
+    'motou': 'pat_head',
+    'dagun': 'roll',
+    'moshou': 'shake_paw',
+    'yaoweiba': 'wag_tail',
+    'sajiao': 'act_cute',
+    'zhuanquan': 'spin',
+    'xiaopao': 'run',
+    'waitou': 'tilt_head',
+    'shenlanyao': 'stretch',
+    'shuaishui': 'shake'
+  };
+
+  const animName = actionAnimMap[action];
+  if (animName && animationMap[animName]) {
+    playAnimation(animName, false);
+  } else if (animName) {
+    // 程序化动画
+    const partMap = {
+      'pat_head': 'head', 'roll': 'body', 'shake_paw': 'left_paw',
+      'wag_tail': 'tail', 'act_cute': 'head', 'spin': 'body',
+      'run': 'body', 'tilt_head': 'head', 'stretch': 'body', 'shake': 'body'
+    };
+    playProceduralAnimation(partMap[animName] || 'body');
+  }
+};
+
+window.resetCamera = function() {
+  if (controls) {
+    controls.reset();
+    camera.position.set(0, 0.8, 3.5);
+    controls.target.set(0, 0.5, 0);
+  }
+};
+
+// ========== 通知原生 ==========
+function notifyNative(event, data) {
+  if (window.harmonyBridge && window.harmonyBridge.onEvent) {
+    window.harmonyBridge.onEvent(event, JSON.stringify(data));
+  }
+}
+
+// ========== 窗口自适应 ==========
+function onResize() {
+  const container = document.getElementById('canvas-container');
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+
+// ========== 动画循环 ==========
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+
+  if (mixer) mixer.update(delta);
+  if (controls) controls.update();
+
+  // 待机时轻微呼吸动画
+  if (model && !isAnimating) {
+    const t = Date.now() * 0.001;
+    model.position.y += Math.sin(t * 1.5) * 0.0003;
+  }
+
+  renderer.render(scene, camera);
+}
+
+// ========== 启动 ==========
+init();
+
+// 如果有初始模型URL，自动加载
+if (window.initialModelUrl) {
+  loadModel(window.initialModelUrl);
+}
+</script>
+</body>
+</html>

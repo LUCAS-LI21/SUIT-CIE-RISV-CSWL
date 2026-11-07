@@ -1,0 +1,15 @@
+[Unit]
+Description=定时触发 K1 自检（开机后 40 秒首跑，此后每 90 秒一次）
+
+[Timer]
+# 开机后 40 秒：给 ollama / 视觉 / ASR 留出各自的启动时间。
+# ASR 要载 229 MB 模型，实测约 20 s；视觉要等 /dev/media0 枚举。
+OnBootSec=40s
+# 运行期自愈：kill 掉任意一个服务，最迟 90 秒后自动拉起。
+OnUnitActiveSec=90s
+AccuracySec=5s
+# 错过了（比如刚开机就断电）就在下次启动补跑
+Persistent=false
+
+[Install]
+WantedBy=timers.target

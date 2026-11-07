@@ -1,0 +1,36 @@
+[Unit]
+Description=K1 语音识别服务（SenseVoice-Small int8 + silero-VAD，HTTP 11437）
+After=network-online.target sound.target k1-vision.service
+Wants=network-online.target
+# 239 MB 模型冷加载 10~17 秒，异常重启要留间隔；启动失败超 5 次就停手，
+# 常见原因是麦克风被拔或 dsnoop0 定义被覆盖，人工修比无限重启有用。
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/root/k1-ai
+
+# 与 petvoice（11439）共用一支麦克风。麦克风默认独占，必须都走 dsnoop0。
+# ALSA_CONFIG_PATH 缺了 alsa.conf 会报 "Unknown slave PCM hw:0,0"：
+# 只加载 /etc/asound.conf 时找不到 hw 定义。
+Environment=ALSA_CONFIG_PATH=/usr/share/alsa/alsa.conf:/etc/asound.conf
+Environment=PYTHONUNBUFFERED=1
+
+# 幂等补 dsnoop0（与 petvoice 的 ExecStartPre 相同，谁先起谁补）
+ExecStartPre=/bin/sh -c 'grep -q dsnoop0 /etc/asound.conf 2>/dev/null || cat /root/k1-ai/dsnoop.conf >> /etc/asound.conf'
+
+# --device 必须写 plug:dsnoop0，两个原因叠加：
+#   1) dsnoop 不重采样，USB 声卡原生 44100，直接要 16000 会被静默降级，
+#      sherpa 拿 44.1k 的样本当 16k 解，识别全错；
+#   2) plug: 前缀让 ALSA 插入 rate 转换插件，才能真正拿到 16 kHz。
+# --provider=cpu 不能改：SpaceMIT EP 会申请 /dev/tcm，而 TCM 是独占资源，
+# 与视觉服务（11436）抢会直接崩。代价是 RTF≈0.96，监护场景够用。
+ExecStart=/usr/bin/python3 /root/k1-ai/asr_service.py --device plug:dsnoop0 --lang zh --threads 4 --port 11437 --host 0.0.0.0
+
+Restart=on-failure
+# 冷加载要 10~17 秒，重启太快会在模型没读完时又被叫停
+RestartSec=40
+
+[Install]
+WantedBy=multi-user.target
