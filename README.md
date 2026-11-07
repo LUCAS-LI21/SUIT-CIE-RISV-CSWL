@@ -31,6 +31,12 @@ k1/                      K1 边缘端（RISC-V，Bianbu Linux）
 ├── kb/                  知识库服务（11435）：rag.py + pet_kb.json
 └── scripts/             70+ 诊断/标定/部署脚本（端口转发、音频底噪、ASR 门限、触摸控制…）
 
+device/                  南向固件（OpenHarmony 轻量系统 / 星闪）
+├── rk2206/              环控固件：RK2206 板，LiteOS-M，MQTT 收 ctrl/ctrl3 驱动喂食与环境外设
+│   ├── bsp/             板级支持包与 IoT HAL 适配（sdk_liteos、adapter/hals）
+│   └── product/         产品定义、HDF 驱动、39 个样例（e1_iot_smart_home 为环控综合例程）
+└── hi3863/              星闪固件：WS63V100 套件，SLE 客户端/服务端，经 MQTT 与 RK2206 联动
+
 pad/                     3568 平板端（OpenHarmony ArkTS）
 ├── entry/src/main/ets/          应用源码（约 15.5k 行）
 │   ├── pages/                   欢迎、登录、选宠、建档、3D 生成、主界面
@@ -48,6 +54,8 @@ pad/                     3568 平板端（OpenHarmony ArkTS）
   4 GB LPDDR4X，Bianbu Linux，Python 3.10
 - **3568**：SC-3568HA，OpenHarmony 5.0.0.71，API 12，720×1280
 - **网络**：3568 eth0 ↔ K1 end0 网线直连，K1 静态 192.168.88.10
+- **南向固件**（可选）：RK2206「通晓」开发板（OpenHarmony 3.0 轻量系统）+ WS63 星闪套件；
+  两块板之间无 SLE 直连，靠 MQTT 云端中转，源码见 `device/`
 
 ## 快速开始
 

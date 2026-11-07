@@ -1,0 +1,54 @@
+static_library("locker_sle_server") {
+  sources = [
+    "sle_server_app.c",
+    "sle_server_lib.c",
+    "key_module.c",
+  ]
+
+  defines = [
+    "CONFIG_UART_SUPPORT_TX",
+    "CONFIG_UART_SUPPORT_RX",
+  ]
+  
+  include_dirs = [
+   "//device/soc/hisilicon/ws63v100/adapter/hals/communication/sle_lite/include",
+    "//base/startup/init/interfaces/innerkits/include",
+    "//device/soc/hisilicon/ws63v100/sdk/include/driver",
+    "//device/soc/hisilicon/ws63v100/sdk/drivers/chips/ws63/rom/drivers/chips/ws63/porting/pinctrl",
+    "//device/soc/hisilicon/ws63v100/sdk/drivers/drivers/hal/pinmux/common", 
+    "//device/soc/hisilicon/ws63v100/sdk/include/middleware/services/bts/sle",
+    "//foundation/communication/sle",
+    "//device/soc/hisilicon/ws63v100/sdk/kernel/osal/include/debug",
+    "//device/soc/hisilicon/ws63v100/sdk/kernel/osal/include/memory",
+    "//device/soc/hisilicon/ws63v100/sdk/kernel/osal/include/schedule",
+    "//base/iothardware/peripheral/interfaces/inner_api",
+    "//device/soc/hisilicon/ws63v100/sdk/drivers/drivers/hal/uart",
+    "//device/soc/hisilicon/ws63v100/sdk/drivers/chips/ws63/porting/uart",
+    "//device/soc/hisilicon/ws63v100/sdk/middleware/utils/common_headers/native",
+    "//commonlibrary/utils_lite/include",
+    "//kernel/liteos_m/kal/cmsis",
+    "//utils/native/lite/include",
+    "//kernel/liteos_m/components/cmsis/2.0",
+    "//device/soc/hisilicon/ws63v100/sdk/kernel/liteos/liteos_v208.5.0/Huawei_LiteOS/compat/linux/include",
+    "//foundation/communication/bluetooth/interfaces/inner_api/include/c_header",
+    "//device/soc/hisilicon/ws63v100/sdk/kernel/osal/include",
+    "//device/soc/hisilicon/ws63v100/sdk/include/middleware/services/bts/ble",
+    "//device/soc/hisilicon/ws63v100/sdk/include/middleware/services/bts/common",
+    "//device/soc/hisilicon/ws63v100/sdk/test/common/testsuite/include"
+  ]
+  include_dirs += [
+    "//commonlibrary/utils_lite/include",
+    "//kernel/liteos_m/kal",
+    "//base/iothardware/peripheral/interfaces/inner_api",
+    "//device/soc/hisilicon/ws63v100/sdk/include/driver",
+    "//device/soc/hisilicon/ws63v100/sdk/drivers/chips/ws63/rom/drivers/chips/ws63/porting/pinctrl",
+    "//device/soc/hisilicon/ws63v100/sdk/kernel/osal/include",
+    "//device/soc/hisilicon/ws63v100/sdk/drivers/chips/ws63/porting/adc",
+    "//device/soc/hisilicon/ws63v100/sdk/kernel/osal/include/interrupt",
+  ]
+  
+  
+  deps = [
+    "//device/soc/hisilicon/ws63v100/adapter/hals/iot_hardware/wifiiot_lite:hal_iothardware",
+  ]
+}

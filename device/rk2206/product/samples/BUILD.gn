@@ -1,0 +1,71 @@
+# Copyright (c)  2024 iSoftStone Education Co., Ltd.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/lite/config/component/lite_component.gni")
+
+lite_component("app") {
+    features = [
+
+        # 内核类
+        # "a1_kernel_task:task_example",
+        # "./a2_kernel_semaphore:semaphore_example",
+        # "./a3_kernel_timer:timer_example",
+        # "./a4_kernel_mutex:mutex_example",
+        # "./a5_kernel_queue:queue_example",
+        # "./a6_kernel_event:event_example",
+        # "./a7_hal_file:hal_file_example",
+        # "./a8_hal_dir:hal_dir_example",
+        # "a9_kv_store:kv_store_example" ,
+        # "a10_flash:flash_example" ,
+
+        # 基础外设类
+        # "./b1_gpio:gpio_example",
+        # "./b2_gpio_interrupt:gpio_interrupt_example",
+        # "./b2_key_scan:key_scan_example" ,
+        # "./b3_adc_key:adc_example",
+        # "./b4_uart0:uart_example",
+        # "./b5_uart2:uart2_example",
+        # "./b6_i2c_scan:i2c_scan_example",
+        #  "./b7_beep:beep_example",
+        # "./b8_electrical_machinery:electrical_machinery_example",
+        # "./b9_rgb_led:rgb_led_example",
+        # "./b10_wifi_udp:wifi_udp_example",  
+        # "./b11_wifi_tcp:wifi_tcp_example",
+        # "./b12_watchdog:watchdog_example",
+        # "./b13_reboot:reboot_example",
+        # "./b14_wifi_ap_tcp_server:wifi_AP_tcp_server" ,
+        # "./b15_wifi_ap_udp_server:wifi_AP_udp_server" ,
+        # "./b16_wifi_pair:wifi_pair" ,
+
+        # 基础设备类
+        # "./c1_gas_sensor:gas_sensor_example",
+        # "./c2_lcd:lcd_example",
+        # "./c3_eeprom:eeprom_example",
+        # "./c4_nfc:nfc_example",
+        # "./c5_sht30:sht30_example",
+        # "./c6_bh1750:bh1750_example",
+        # "./c7_mpu6050:mpu6050_example",
+
+        # 综合实验类
+        # "./d1_smart_home:smart_home_example",
+        # "./d2_smart_security:smart_security_example",
+
+        # Iot综合实验类
+        # "./e1_iot_smart_home:iot_smart_home_example",
+        # "./e2_iot_smart_security:iot_smart_security_example",
+        "./new_energy_car:new_energy_car",
+    ]
+
+    deps = [
+    ]
+}

@@ -1,0 +1,15 @@
+{
+  "services": [
+    {
+      "service_id": "NECcontrol",
+      "properties": {
+        "AirConditionT": "26",
+        "AirConditionStatus": "ON",
+        "WindowsStatus": "OFF",
+        "TrunkStaus": "OFF",
+        "CarLockStaus": "OFF",
+        "LEDStatus": "OFF"
+      }
+    }
+  ]
+}
