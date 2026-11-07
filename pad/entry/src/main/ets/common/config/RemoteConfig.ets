@@ -205,8 +205,8 @@ export class RemoteConfig {
    * 实测取不到值（恒为 false，页面停在欢迎页且不报错）。方法在调用时求值，没有这个问题。
    */
   static demoSkipLogin(): boolean {
-    // 联调阶段临时直通主界面，方便上板后直接核对四路数据。
-    // 交付前必须改回 `return RemoteConfig.target() === 'emulator';`（真板走完整登录）。
-    return true;
+    // 板端发布形态：走完整登录流程（false）。只有 PC 模拟器调试才跳过。
+    // PC 上的演示版单独维护，那份才写死 true；本仓库是上板代码，不能绕过登录。
+    return RemoteConfig.target() === 'emulator';
   }
 }
