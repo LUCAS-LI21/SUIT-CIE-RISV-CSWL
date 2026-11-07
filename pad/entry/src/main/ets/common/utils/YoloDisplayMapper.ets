@@ -92,8 +92,12 @@ export function mapYoloBehaviorToAction(behavior: string): string | null {
     // 玩球/接飞盘 → play（rawfile 里有 3d/play.mp4 无前缀）
     case 'playing_ball': return 'play';
     case 'playing_frisbee': return 'play';
-    // 走路 → 转圈（动态）
-    case 'walking': return 'zhuanquan';
+    // 走路 → 小跑（xiaopao）
+    // 原来这里返回 'zhuanquan'（原地转圈）：识别结果是「行走」，画面上却在转圈，
+    // 同屏文字写「行走」、形象在转圈，自相矛盾（现场一眼就能看出对不上）。
+    // 素材里没有专门的「行走」片源，xiaopao 是 12 对猫狗动画里语义最接近的；
+    // 与 running 共用同一条片子，靠行为标签与循环/速度感受区分。
+    case 'walking': return 'xiaopao';
     // 久卧 → lie1
     case 'long_still': return 'lie1';
     default:

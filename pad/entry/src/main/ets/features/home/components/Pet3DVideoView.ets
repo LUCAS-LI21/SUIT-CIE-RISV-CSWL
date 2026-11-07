@@ -14,6 +14,15 @@ export struct Pet3DVideoView {
   @Prop @Watch('onActionCommandChange') actionCommand: string = '';
   @Prop @Watch('onPetTypeChange') petType: string = 'dog'; // 宠物类型：dog/cat，监听变化
   @Prop disableAutoRandom: boolean = false; // YOLO 未检测到宠物时关闭空闲随机循环（避免反复切视频造成卡顿）
+  /**
+   * 该动作是否循环播放。
+   *
+   * 「走」「跑」「玩」这类**持续行为**必须循环：识别到行走时宠物会一直走，
+   * 若按单次动作处理，播完 3 秒就停在最后一帧（看起来就是「卡住」），
+   * 只能等行为变化才重新触发——而行为根本没变，于是永远停在那儿。
+   * 跳、坐、卧这类**瞬时行为**仍然单次播放，播完回待机。
+   */
+  @Prop loopAction: boolean = false;
   @State currentVideoSrc: Resource = $rawfile('3d/dog_sajiao.mp4'); // 默认视频（初始化前使用）
   @State videoLoop: boolean = true; // 是否循环播放
   private currentAction: string = 'idle';
@@ -281,10 +290,10 @@ export struct Pet3DVideoView {
     this.isPlayingOneShot = true;
     this.actionStartTime = Date.now();
 
-    // 设置动作视频(单次播放)
+    // 设置动作视频：持续行为循环，瞬时行为单次
     const videoFile = this.getVideoFileName(action);
     this.currentVideoSrc = $rawfile(videoFile);
-    this.videoLoop = false;
+    this.videoLoop = this.loopAction;
 
     // 启动视频播放（先停止再启动，确保切换流畅）
     if (isInterrupt) {
@@ -299,7 +308,11 @@ export struct Pet3DVideoView {
     this.videoController.start();
     console.info(`[Pet3DVideoView] ▶️ 播放动作视频: ${videoFile}`);
 
-    // 添加10秒超时保护，如果视频卡住也通知父组件继续
+    // 超时保护：只对**单次**动作有意义。循环动作本来就该一直在播，
+    // 给它加 10 秒超时会在第 10 秒强行切回待机，正是「走两下就停」的来源之一。
+    if (this.loopAction) {
+      return;
+    }
     this.actionTimer = setTimeout(() => {
       console.warn(`[Pet3DVideoView] 动作 ${action} 超时(10秒)`);
       if (this.onActionFinished) {
@@ -332,7 +345,11 @@ export struct Pet3DVideoView {
             if (this.onActionFinished) {
               this.onActionFinished();
             } else {
-              this.playIdle();
+              // 不能直接调 playIdle()：它开头有 `if (isPlayingOneShot) return`，
+              // 而此刻 isPlayingOneShot 还是 true，会直接返回 —— 待机视频永远不播，
+              // 画面停在动作视频的最后一帧，看起来就是「转一圈就卡住」。
+              // forceResetToIdle 会先清标志再回待机。
+              this.forceResetToIdle();
             }
           }
         })

@@ -53,6 +53,9 @@ export struct HomeTab {
   @State petViewKey: number = 0;
   @State showActionBar: boolean = false;
   @State petActionCommand: string = '';
+  // 当前动作是否循环播放。行走/奔跑/玩耍是持续行为，识别期间一直成立，
+  // 必须循环播；否则视频播完就停在最后一帧（现场表现就是「转一圈卡住」）。
+  @State yoloActionLoops: boolean = false;
   @State petType: string = 'dog'; // 宠物类型，默认小狗（避免 YOLO 首次检测时切换导致组件重建）
   @State petName: string = '旺财'; // 宠物名称
   @State useStandardModel: boolean = true; // 是否使用标准模型（视频模式）
@@ -874,6 +877,8 @@ export struct HomeTab {
     // 动作名没变，但行为真的变了，形象应该重新起跳一次。
     if (action !== null && adopted !== this.lastTriggeredBehavior) {
       this.lastTriggeredBehavior = adopted;
+      // 持续行为循环播放，瞬时行为单次播放（跳、坐、卧等播完回待机）
+      this.yoloActionLoops = (adopted === 'walking' || adopted === 'running' || adopted === 'playing');
       const cmd = `${action}_${Date.now()}`;
       console.info(`[HomeTab] 🎬 ${adopted} → ${action} → petActionCommand="${cmd}"`);
       this.petActionCommand = cmd;
@@ -1389,6 +1394,7 @@ export struct HomeTab {
             Video3DView({
               actionCommand: this.petActionCommand,
               petType: this.petType,
+              loopAction: this.yoloActionLoops,
               disableAutoRandom: true // 真实模式：关闭自动随机循环，仅由 YOLO 驱动视频
             })
               .width('100%')
